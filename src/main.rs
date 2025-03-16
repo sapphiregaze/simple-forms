@@ -1,3 +1,4 @@
+use actix_cors::Cors;
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use clap::Parser;
 use rusqlite::{params, Connection, Result as SqliteResult};
@@ -39,8 +40,19 @@ async fn main() -> std::io::Result<()> {
         args.port, args.domain
     );
 
+    let allowed_origin = format!("http://{}", args.domain);
+    let allowed_origin_https = format!("https://{}", args.domain);
+
     HttpServer::new(move || {
+        let cors = Cors::default()
+            .allowed_origin(&allowed_origin)
+            .allowed_origin(&allowed_origin_https)
+            .allowed_methods(vec!["GET", "POST"])
+            .allowed_headers(vec!["Content-Type"])
+            .max_age(3600);
+
         App::new()
+            .wrap(cors)
             .app_data(web::Data::new(AppState {
                 db: Mutex::new(Connection::open("contacts.db").expect("Failed to open database")),
                 allowed_domain: args.domain.clone(),
