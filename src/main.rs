@@ -40,12 +40,12 @@ async fn main() -> std::io::Result<()> {
         args.port, args.domain
     );
 
-    let allowed_origin_http = format!("http://*.{}", args.domain);
-    let allowed_origin_https = format!("https://*.{}", args.domain);
+    let allowed_origin = format!("http://{}", args.domain);
+    let allowed_origin_https = format!("https://{}", args.domain);
 
     HttpServer::new(move || {
         let cors = Cors::default()
-            .allowed_origin(&allowed_origin_http)
+            .allowed_origin(&allowed_origin)
             .allowed_origin(&allowed_origin_https)
             .allowed_methods(vec!["GET", "POST", "OPTIONS"])
             .allowed_headers(vec!["Content-Type", "Origin", "Accept"])
