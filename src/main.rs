@@ -40,15 +40,14 @@ async fn main() -> std::io::Result<()> {
         args.port, args.domain
     );
 
-    let allowed_origin = format!("http://{}", args.domain);
-    let allowed_origin_https = format!("https://{}", args.domain);
+    let allowed_origin = format!("https://*.{}", args.domain);
 
     HttpServer::new(move || {
         let cors = Cors::default()
             .allowed_origin(&allowed_origin)
-            .allowed_origin(&allowed_origin_https)
-            .allowed_methods(vec!["GET", "POST"])
-            .allowed_headers(vec!["Content-Type"])
+            .allowed_methods(vec!["GET", "POST", "OPTIONS"])
+            .allowed_headers(vec!["Content-Type", "Origin", "Accept"])
+            .supports_credentials()
             .max_age(3600);
 
         App::new()
@@ -86,32 +85,26 @@ async fn submit_contact(
 ) -> impl Responder {
     let allowed_domain = &data.allowed_domain;
 
-    let host = match req.headers().get("host") {
-        Some(host_header) => match host_header.to_str() {
-            Ok(host_str) => host_str,
-            Err(_) => return HttpResponse::BadRequest().body("Invalid host header"),
+    let origin = match req.headers().get("origin") {
+        Some(origin_header) => match origin_header.to_str() {
+            Ok(origin_str) => origin_str,
+            Err(_) => return HttpResponse::BadRequest().body("Invalid origin header"),
         },
-        None => return HttpResponse::BadRequest().body("Missing host header"),
+        None => return HttpResponse::BadRequest().body("Missing origin header"),
     };
-
-    if !host.contains(allowed_domain) {
-        return HttpResponse::Forbidden().json(
-            serde_json::json!({"error": format!("Access denied. Only requests from {} are allowed", allowed_domain)})
-        );
-    }
 
     let referer = match req.headers().get("referer") {
         Some(referer_header) => match referer_header.to_str() {
             Ok(referer_str) => referer_str,
             Err(_) => return HttpResponse::BadRequest().body("Invalid referer header"),
         },
-        None => "",
+        None => return HttpResponse::BadRequest().body("Missing referer header"),
     };
 
-    if !referer.is_empty() && !referer.contains(allowed_domain) {
-        return HttpResponse::Forbidden().json(
-            serde_json::json!({"error": format!("Access denied. Only requests from {} are allowed", allowed_domain)})
-        );
+    if (!origin.is_empty() && !origin.contains(allowed_domain))
+        || (!referer.is_empty() && !referer.contains(allowed_domain))
+    {
+        return HttpResponse::Forbidden().body("Access denied");
     }
 
     let db = data.db.lock().unwrap();
