@@ -1,4 +1,5 @@
 use actix_cors::Cors;
+use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use clap::Parser;
 use rusqlite::{params, Connection, Result as SqliteResult};
@@ -43,6 +44,12 @@ async fn main() -> std::io::Result<()> {
     let allowed_origin = format!("http://{}", args.domain);
     let allowed_origin_https = format!("https://{}", args.domain);
 
+    let governor_conf = GovernorConfigBuilder::default()
+        .requests_per_minute(1)
+        .burst_size(1)
+        .finish()
+        .unwrap();
+
     HttpServer::new(move || {
         let cors = Cors::default()
             .allowed_origin(&allowed_origin)
@@ -54,6 +61,7 @@ async fn main() -> std::io::Result<()> {
 
         App::new()
             .wrap(cors)
+            .wrap(Governor::new(&governor_conf))
             .app_data(web::Data::new(AppState {
                 db: Mutex::new(Connection::open("contacts.db").expect("Failed to open database")),
                 allowed_domain: args.domain.clone(),
