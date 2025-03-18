@@ -1468,6 +1468,7 @@ dependencies = [
  "actix-governor",
  "actix-web",
  "clap",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

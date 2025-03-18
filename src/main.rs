@@ -2,6 +2,7 @@ use actix_cors::Cors;
 use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use clap::Parser;
+use regex::Regex;
 use rusqlite::{params, Connection, Result as SqliteResult};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
@@ -27,6 +28,7 @@ struct ContactForm {
 struct AppState {
     db: Mutex<Connection>,
     allowed_domain: String,
+    email_regex: Regex,
 }
 
 #[actix_web::main]
@@ -50,6 +52,11 @@ async fn main() -> std::io::Result<()> {
         .finish()
         .unwrap();
 
+    let regex = Regex::new(
+        r"(?i)^([\w-]+(?:\.[\w-]+)*)@((?:[\w-]+\.)*\w[\w-]{0,66})\.([a-z]{2,6}(?:\.[a-z]{2})?)$",
+    )
+    .unwrap();
+
     HttpServer::new(move || {
         let cors = Cors::default()
             .allowed_origin(&allowed_origin)
@@ -65,6 +72,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(AppState {
                 db: Mutex::new(Connection::open("contacts.db").expect("Failed to open database")),
                 allowed_domain: args.domain.clone(),
+                email_regex: regex.clone(),
             }))
             .route("/contact", web::post().to(submit_contact))
     })
@@ -85,6 +93,42 @@ fn init_db(conn: &Connection) -> SqliteResult<()> {
         )",
         [],
     )?;
+    Ok(())
+}
+
+fn validate_form(form: &ContactForm, email_regex: &Regex) -> Result<(), String> {
+    if form.name.trim().is_empty() {
+        return Err("Name cannot be empty".to_string());
+    }
+
+    if form.email.trim().is_empty() {
+        return Err("Email cannot be empty".to_string());
+    }
+
+    if form.message.trim().is_empty() {
+        return Err("Message cannot be empty".to_string());
+    }
+
+    if form.name.chars().count() > 50 {
+        return Err("Name must be 50 characters or less".to_string());
+    }
+
+    if form.email.chars().count() > 50 {
+        return Err("Email must be 50 characters or less".to_string());
+    }
+
+    if form.subject.chars().count() > 100 {
+        return Err("Subject must be 100 characters or less".to_string());
+    }
+
+    if form.message.chars().count() > 500 {
+        return Err("Message must be 500 characters or less".to_string());
+    }
+
+    if !email_regex.is_match(&form.email) {
+        return Err("Invalid email format".to_string());
+    }
+
     Ok(())
 }
 
@@ -115,6 +159,10 @@ async fn submit_contact(
         || (!referer.is_empty() && !referer.contains(allowed_domain))
     {
         return HttpResponse::Forbidden().body("Access denied");
+    }
+
+    if let Err(error_message) = validate_form(&form, &data.email_regex) {
+        return HttpResponse::BadRequest().json(serde_json::json!({"error": error_message}));
     }
 
     let db = data.db.lock().unwrap();
